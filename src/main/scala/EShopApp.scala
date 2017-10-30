@@ -1,4 +1,4 @@
-import actors.EShopActor
+import actors.{CustomerActor}
 import akka.actor._
 
 import scala.concurrent.Await
@@ -6,9 +6,9 @@ import scala.concurrent.duration._
 
 object EShopApp extends App {
   val system = ActorSystem("EShopApp")
-  val mainActor = system.actorOf(Props[EShopActor], "mainActor")
+  val customer = system.actorOf(Props[CustomerActor], "customer")
 
-  mainActor ! "Init"
+  customer ! CustomerActor.Init
 
   Await.result(system.whenTerminated, Duration.Inf)
 }

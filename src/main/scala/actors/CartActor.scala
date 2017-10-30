@@ -9,15 +9,17 @@ import scala.language.postfixOps
 object CartActor  {
   case class ItemRemoved()
   case class ItemAdded()
-  case class CheckoutStarted()
+  case class CheckoutStarted(checkout: ActorRef)
   case class CheckoutCancelled()
   case class CheckoutClosed()
   case class CartTimerExpired()
 
   case class Checkout(checkout: ActorRef)
+
+  def props(customer: ActorRef): Props = Props(new CartActor(customer))
 }
 
-class CartActor extends Actor with Timers{
+class CartActor(customer: ActorRef) extends Actor with Timers{
   import CartActor._
 
   var itemCount = BigInt(0)
@@ -44,11 +46,11 @@ class CartActor extends Actor with Timers{
       timers.cancel(CartTimerExpired)
       itemCount -= 1
       context become empty
-    case CheckoutStarted() =>
+    case CustomerActor.StartCheckout =>
       timers.cancel(CartTimerExpired)
-      val checkout: ActorRef = context.actorOf(CheckoutActor.props(self), "cart")
+      val checkout: ActorRef = context.actorOf(CheckoutActor.props(self, customer), "checkout")
       checkout ! CheckoutActor.CheckoutStarted()
-      sender ! Checkout(checkout)
+      customer ! CheckoutStarted(checkout)
       context become inCheckout
     case CartTimerExpired =>
       itemCount = 0
@@ -59,6 +61,7 @@ class CartActor extends Actor with Timers{
     case CheckoutClosed =>
       itemCount = 0
       println("CheckoutClosed")
+      customer ! CustomerActor.CartEmpty
       context become empty
     case CheckoutCancelled =>
       sender ! CartActor.CheckoutStarted

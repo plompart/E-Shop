@@ -15,10 +15,10 @@ object CheckoutActor  {
   case class CheckoutTimerExpired()
   case class PaymentTimerExpired()
 
-  def props(cart: ActorRef): Props = Props(new CheckoutActor(cart))
+  def props(cart: ActorRef, customer: ActorRef): Props = Props(new CheckoutActor(cart, customer))
 }
 
-class CheckoutActor(cart: ActorRef) extends Actor with Timers{
+class CheckoutActor(cart: ActorRef, customer: ActorRef) extends Actor with Timers{
   import CheckoutActor._
 
   def receive = LoggingReceive {
@@ -41,6 +41,7 @@ class CheckoutActor(cart: ActorRef) extends Actor with Timers{
   def processingPayment(): Receive = LoggingReceive {
     case PaymentReceived =>
       timers.cancel(PaymentTimerExpired)
+      customer ! CartActor.CheckoutClosed()
       cart ! CartActor.CheckoutClosed
       context stop self
     case PaymentTimerExpired =>
@@ -55,6 +56,8 @@ class CheckoutActor(cart: ActorRef) extends Actor with Timers{
     case PaymentSelected =>
       timers.cancel(CheckoutTimerExpired)
       timers.startSingleTimer(PaymentTimerExpired, PaymentTimerExpired, 3.seconds)
+      val paymentService: ActorRef = context.actorOf(PaymentServiceActor.props(self), "paymentService")
+      sender ! CustomerActor.PaymentServiceStarted(paymentService)
       context become processingPayment()
     case CheckoutTimerExpired =>
       cart ! CartActor.CheckoutCancelled
