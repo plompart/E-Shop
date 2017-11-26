@@ -1,9 +1,11 @@
 package actors
 
-import akka.actor.{Actor, ActorRef}
+import java.net.URI
+
+import akka.actor.{Actor, ActorRef, Props}
 import akka.event.LoggingReceive
 
-object CustomerActor  {
+object CustomerActor {
   case class StartCheckout()
   case class Init()
   case class PaymentServiceStarted(paymentService: ActorRef)
@@ -17,10 +19,10 @@ class CustomerActor extends Actor {
 
   def InCart(): Receive = LoggingReceive {
     case Init =>
-      val cart: ActorRef = context.actorOf(CartActor.props(self), "cart")
-      cart ! CartActor.ItemAdded
-      cart ! CartActor.ItemRemoved
-      cart ! CartActor.ItemAdded
+      val cart: ActorRef = context.actorOf(Props(new CartManagerActor(1, self, Cart.empty)), "Cart")
+      cart ! CartManagerActor.ItemAdded(Item(new URI("http://item1.pl"), "item1", 10, 1), System.currentTimeMillis())
+      cart ! CartManagerActor.ItemRemoved(Item(new URI("http://item2.pl"), "item2", 10, 1), System.currentTimeMillis())
+      cart ! CartManagerActor.ItemAdded(Item(new URI("http://item3.pl"), "item3", 10, 1), System.currentTimeMillis())
       cart ! StartCheckout
       context become inCheckout
     case CartEmpty =>
@@ -28,9 +30,9 @@ class CustomerActor extends Actor {
   }
 
   def inCheckout(): Receive = LoggingReceive {
-    case CartActor.CheckoutClosed() =>
+    case CartManagerActor.CheckoutClosed() =>
       context become InCart
-    case CartActor.CheckoutStarted(checkout) =>
+    case CartManagerActor.CheckoutStarted(checkout, date) =>
       checkout ! CheckoutActor.DeliveryMethodSelected
       checkout ! CheckoutActor.PaymentSelected
       context become inPayment
