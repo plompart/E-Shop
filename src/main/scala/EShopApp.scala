@@ -10,5 +10,13 @@ object EShopApp extends App {
 
   customer ! CustomerActor.Init
 
+  Thread.sleep(5 * 1000)
+  system.terminate()
+  Thread.sleep(5 * 1000)
+
+  val system2 = ActorSystem("EShopApp")
+  val customer2 = system2.actorOf(Props[CustomerActor], "customer")
+  customer2 ! CustomerActor.Checkout
+
   Await.result(system.whenTerminated, Duration.Inf)
 }

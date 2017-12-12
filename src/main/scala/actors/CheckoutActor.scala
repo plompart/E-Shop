@@ -1,66 +1,128 @@
 package actors
 
-import akka.actor.{Actor, ActorRef, Props, Timers}
+import java.util.concurrent.TimeUnit
+
+import akka.actor.{ActorRef, Props, Timers}
 import akka.event.LoggingReceive
+import akka.persistence.{PersistentActor, RecoveryCompleted}
 
 import scala.concurrent.duration._
 import scala.language.postfixOps
 
-object CheckoutActor  {
+object CheckoutActor {
   case class Cancelled()
   case class DeliveryMethodSelected()
-  case class CheckoutStarted()
-  case class PaymentSelected()
+  case class CheckoutStarted(date: Long)
+  case class PaymentSelected(date: Long = System.currentTimeMillis())
   case class PaymentReceived()
   case class CheckoutTimerExpired()
   case class PaymentTimerExpired()
 
-  def props(cart: ActorRef, customer: ActorRef): Props = Props(new CheckoutActor(cart, customer))
+  sealed trait Timer
+  case object CheckoutTimer extends Timer
+  case object CheckoutTimerExpired
+  case object PaymentTimer extends Timer
+
+  case class CheckoutTimerStartedEvent(timestamp: Long)
+  case class PaymentTimerStartedEvent(timestamp: Long)
 }
 
-class CheckoutActor(cart: ActorRef, customer: ActorRef) extends Actor with Timers{
+class CheckoutActor(id: Long, customer: ActorRef) extends PersistentActor with Timers {
+
   import CheckoutActor._
 
-  def receive = LoggingReceive {
-    case CheckoutStarted() =>
-      timers.startSingleTimer(CheckoutTimerExpired, CheckoutTimerExpired, 3.seconds)
-      context become selectingDelivery()
+  private val cart: ActorRef = context.parent
+
+  val checkoutTimer = "CheckoutTimer"
+  val checkoutTimeout = FiniteDuration(30, TimeUnit.SECONDS)
+  val paymentTimer = "PaymentTimer"
+  val paymentTimeout = FiniteDuration(30, TimeUnit.SECONDS)
+  val interval: FiniteDuration = 10 seconds
+
+  override def persistenceId: String = "checkout:" + id
+
+  override def receiveRecover: Receive = {
+    case RecoveryCompleted =>
+      if(!timers.isTimerActive(CheckoutTimer) && !timers.isTimerActive(PaymentTimer))
+        persist(CheckoutTimerStartedEvent(System.currentTimeMillis()))(_ => {
+          timers.startSingleTimer(CheckoutTimer, CheckoutTimerExpired, interval)
+        })
+    case event: Any => updateState(event)
   }
 
-  def selectingDelivery(): Receive = LoggingReceive {
-    case Cancelled =>
-      cart ! CartManagerActor.CheckoutCancelled
-      context stop self
+  override def receiveCommand: Receive = LoggingReceive {
+    case event: CheckoutStarted => persist(event)(event => updateState(event))
+  }
+
+  def selectingDelivery: Receive = LoggingReceive {
     case DeliveryMethodSelected =>
-      context become selectingPaymentMethod()
+      persist(DeliveryMethodSelected)(event => updateState(event))
+    case CartManagerActor.CheckoutCancelled =>
+      persist(CartManagerActor.CheckoutCancelled)(event => updateState(event))
     case CheckoutTimerExpired =>
-      cart ! CartManagerActor.CheckoutCancelled
-      context stop self
+      persist(CheckoutTimerExpired)(event => updateState(event))
   }
 
-  def processingPayment(): Receive = LoggingReceive {
-    case PaymentReceived =>
-      timers.cancel(PaymentTimerExpired)
+  def processingPayment: Receive = LoggingReceive {
+    case PaymentReceived => persist(PaymentReceived)( event => {
       customer ! CartManagerActor.CheckoutClosed()
       cart ! CartManagerActor.CheckoutClosed
-      context stop self
-    case PaymentTimerExpired =>
+      updateState(event)
+    })
+    case PaymentTimerExpired => persist(PaymentTimerExpired)(event => {
       cart ! CartManagerActor.CheckoutCancelled
-      context stop self
+      updateState(event)
+    })
   }
 
-  def selectingPaymentMethod(): Receive = LoggingReceive {
+  def selectingPaymentMethod: Receive = LoggingReceive {
+    case event: PaymentSelected =>
+      persist(event)(event => {
+        val paymentService: ActorRef = context.actorOf(PaymentServiceActor.props(self), "paymentService")
+        sender ! CustomerActor.PaymentServiceStarted(paymentService)
+        updateState(event)
+      })
     case Cancelled =>
-      cart ! CartManagerActor.CheckoutCancelled
-      context stop self
-    case PaymentSelected =>
-      timers.cancel(CheckoutTimerExpired)
-      timers.startSingleTimer(PaymentTimerExpired, PaymentTimerExpired, 3.seconds)
-      val paymentService: ActorRef = context.actorOf(PaymentServiceActor.props(self), "paymentService")
-      sender ! CustomerActor.PaymentServiceStarted(paymentService)
-      context become processingPayment()
+      persist(Cancelled)(event => {
+        cart ! CartManagerActor.CheckoutCancelled
+        updateState(event)
+      })
     case CheckoutTimerExpired =>
-      cart ! CartManagerActor.CheckoutCancelled
-      context stop self
+      persist(CheckoutTimerExpired)(event => {
+        cart ! CartManagerActor.CheckoutCancelled
+        updateState(event)
+      })
+  }
+
+  private def updateState(event: Any): Unit = {
+    event match {
+      case event: CheckoutStarted =>
+        context become selectingDelivery
+        startTimer(event.date, checkoutTimer, checkoutTimeout, CheckoutTimerExpired)
+      case DeliveryMethodSelected =>
+        context become selectingPaymentMethod
+      case CartManagerActor.CheckoutCancelled | Cancelled =>
+        timers.cancelAll()
+        context stop self
+      case CheckoutTimerExpired =>
+        timers.cancel(checkoutTimer)
+        context stop self
+      case event: PaymentSelected =>
+        timers.cancel(checkoutTimer)
+        startTimer(event.date, paymentTimer, paymentTimeout, PaymentTimerExpired)
+        context become processingPayment
+      case PaymentTimerExpired =>
+        timers.cancel(paymentTimer)
+        context stop self
+      case PaymentReceived =>
+        timers.cancel(paymentTimer)
+        context stop self
+    }
+  }
+
+  private def startTimer(startTime: Long, timer: String, timeout: FiniteDuration, event: Any): Unit = {
+    val timeLeft = (startTime + timeout.toMillis) - System.currentTimeMillis()
+    if (timeLeft > 0) timers.startSingleTimer(timer, event, FiniteDuration(timeLeft, TimeUnit.MILLISECONDS))
+    else updateState(event)
   }
 }

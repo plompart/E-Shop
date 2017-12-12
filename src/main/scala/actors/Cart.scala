@@ -20,4 +20,8 @@ case class Cart(items: Map[URI, Item]) {
       else Cart(items + (it.id -> it.copy(count = oldItem.count - it.count)))
     }else this
   }
+
+  override def toString: String = {
+    "Cart(" + items.values.map(_.toString).mkString(",\n") +")"
+  }
 }

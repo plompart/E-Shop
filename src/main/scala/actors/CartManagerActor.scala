@@ -2,7 +2,7 @@ package actors
 
 import java.util.concurrent.TimeUnit
 
-import akka.actor.{ActorRef, Timers}
+import akka.actor.{ActorRef, Props, Timers}
 import akka.event.LoggingReceive
 import akka.persistence.{PersistentActor, RecoveryCompleted}
 
@@ -20,10 +20,12 @@ object CartManagerActor  {
   case class Checkout(checkout: ActorRef)
 }
 
-class CartManagerActor(id: Long, customer: ActorRef, var cart: Cart) extends PersistentActor with Timers{
+class CartManagerActor(id: Long, var cart: Cart, checkoutId: Long) extends PersistentActor with Timers{
   import CartManagerActor._
+  private val customer: ActorRef = context.parent
 
-  //def this() = this(1, context.parent, Cart.empty)
+
+  def this() = this(1, Cart.empty, 1)
   val cartTimer = "CartTimer"
   val cartTimeout = FiniteDuration(5, TimeUnit.MINUTES)
 
@@ -47,13 +49,13 @@ class CartManagerActor(id: Long, customer: ActorRef, var cart: Cart) extends Per
     case event: ItemRemoved =>
       persist(event)(event => {
         updateState(event)
-        if (cart.items.isEmpty) sender ! CustomerActor.CartEmpty
+        if (cart.items.isEmpty) customer ! CustomerActor.CartEmpty
       })
     case CustomerActor.StartCheckout =>
       persist(CustomerActor.StartCheckout)(event => {
         updateState(event)
-        val checkout: ActorRef = context.actorOf(CheckoutActor.props(self, customer), "checkout")
-        checkout ! CheckoutActor.CheckoutStarted()
+        val checkout: ActorRef = context.actorOf(Props(classOf[Checkout], customer, checkoutId))
+        checkout ! CheckoutActor.CheckoutStarted(System.currentTimeMillis())
         customer ! CheckoutStarted(checkout, System.currentTimeMillis())
       })
     case CartTimerExpired =>

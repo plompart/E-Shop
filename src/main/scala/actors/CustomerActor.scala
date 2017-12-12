@@ -10,23 +10,24 @@ object CustomerActor {
   case class Init()
   case class PaymentServiceStarted(paymentService: ActorRef)
   case class CartEmpty()
+  case class Checkout()
 }
 
 class CustomerActor extends Actor {
   import CustomerActor._
 
   def receive: Receive = InCart()
-
+  val cart: ActorRef = context.actorOf(Props(new CartManagerActor(1, self, Cart.empty)), "Cart")
   def InCart(): Receive = LoggingReceive {
     case Init =>
-      val cart: ActorRef = context.actorOf(Props(new CartManagerActor(1, self, Cart.empty)), "Cart")
       cart ! CartManagerActor.ItemAdded(Item(new URI("http://item1.pl"), "item1", 10, 1), System.currentTimeMillis())
       cart ! CartManagerActor.ItemRemoved(Item(new URI("http://item2.pl"), "item2", 10, 1), System.currentTimeMillis())
       cart ! CartManagerActor.ItemAdded(Item(new URI("http://item3.pl"), "item3", 10, 1), System.currentTimeMillis())
-      cart ! StartCheckout
-      context become inCheckout
     case CartEmpty =>
       context.system.terminate
+    case Checkout =>
+      cart ! StartCheckout
+      context become inCheckout
   }
 
   def inCheckout(): Receive = LoggingReceive {
@@ -34,7 +35,7 @@ class CustomerActor extends Actor {
       context become InCart
     case CartManagerActor.CheckoutStarted(checkout, date) =>
       checkout ! CheckoutActor.DeliveryMethodSelected
-      checkout ! CheckoutActor.PaymentSelected
+      checkout ! CheckoutActor.PaymentSelected(System.currentTimeMillis())
       context become inPayment
   }
 
