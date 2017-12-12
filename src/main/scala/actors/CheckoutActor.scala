@@ -12,16 +12,10 @@ import scala.language.postfixOps
 object CheckoutActor {
   case class Cancelled()
   case class DeliveryMethodSelected()
-  case class CheckoutStarted(date: Long)
   case class PaymentSelected(date: Long = System.currentTimeMillis())
   case class PaymentReceived()
   case class CheckoutTimerExpired()
   case class PaymentTimerExpired()
-
-  sealed trait Timer
-  case object CheckoutTimer extends Timer
-  case object CheckoutTimerExpired
-  case object PaymentTimer extends Timer
 
   case class CheckoutTimerStartedEvent(timestamp: Long)
   case class PaymentTimerStartedEvent(timestamp: Long)
@@ -43,15 +37,11 @@ class CheckoutActor(id: Long, customer: ActorRef) extends PersistentActor with T
 
   override def receiveRecover: Receive = {
     case RecoveryCompleted =>
-      if(!timers.isTimerActive(CheckoutTimer) && !timers.isTimerActive(PaymentTimer))
-        persist(CheckoutTimerStartedEvent(System.currentTimeMillis()))(_ => {
-          timers.startSingleTimer(CheckoutTimer, CheckoutTimerExpired, interval)
-        })
     case event: Any => updateState(event)
   }
 
   override def receiveCommand: Receive = LoggingReceive {
-    case event: CheckoutStarted => persist(event)(event => updateState(event))
+    case event: CartManagerActor.CheckoutStarted => persist(event)(event => updateState(event))
   }
 
   def selectingDelivery: Receive = LoggingReceive {
@@ -65,7 +55,7 @@ class CheckoutActor(id: Long, customer: ActorRef) extends PersistentActor with T
 
   def processingPayment: Receive = LoggingReceive {
     case PaymentReceived => persist(PaymentReceived)( event => {
-      customer ! CartManagerActor.CheckoutClosed()
+      customer ! CartManagerActor.CheckoutClosed
       cart ! CartManagerActor.CheckoutClosed
       updateState(event)
     })
@@ -78,8 +68,8 @@ class CheckoutActor(id: Long, customer: ActorRef) extends PersistentActor with T
   def selectingPaymentMethod: Receive = LoggingReceive {
     case event: PaymentSelected =>
       persist(event)(event => {
-        val paymentService: ActorRef = context.actorOf(PaymentServiceActor.props(self), "paymentService")
-        sender ! CustomerActor.PaymentServiceStarted(paymentService)
+        val paymentService: ActorRef = context actorOf Props(classOf[PaymentServiceActor], customer)
+        customer ! CustomerActor.PaymentServiceStarted(paymentService)
         updateState(event)
       })
     case Cancelled =>
@@ -96,7 +86,7 @@ class CheckoutActor(id: Long, customer: ActorRef) extends PersistentActor with T
 
   private def updateState(event: Any): Unit = {
     event match {
-      case event: CheckoutStarted =>
+      case event: CartManagerActor.CheckoutStarted =>
         context become selectingDelivery
         startTimer(event.date, checkoutTimer, checkoutTimeout, CheckoutTimerExpired)
       case DeliveryMethodSelected =>
