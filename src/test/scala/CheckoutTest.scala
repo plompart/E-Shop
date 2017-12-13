@@ -1,37 +1,39 @@
-import actors.CartManagerActor
-import actors.CheckoutActor.{DeliveryMethodSelected, PaymentReceived, PaymentSelected}
-import akka.actor.{ActorRef, ActorSystem}
-import akka.testkit.{ImplicitSender, TestActorRef, TestKit}
-import org.scalatest.{BeforeAndAfterAll, WordSpecLike}
 
+import actors.CheckoutActor
+import akka.actor.{ActorSystem, Props}
+import akka.testkit.TestProbe
+import org.scalatest.{FeatureSpecLike, GivenWhenThen}
 
-class CheckoutTest extends TestKit(ActorSystem("CheckoutTest")) with WordSpecLike with BeforeAndAfterAll with ImplicitSender {
-//
-//  import actors.CartManagerActor._
-//  import actors.CustomerActor._
-//
-//  override def afterAll(): Unit = {
-//    system.terminate
-//  }
-//
-//  "A Checkout" must {
-//    "send back CheckoutClosed to parent" in {
-//      val cart = TestActorRef(new CartManagerActor(self))
-//
-//      cart ! ItemAdded
-//      cart ! StartCheckout
-//      val msg: CheckoutStarted = expectMsgType[CheckoutStarted]
-//
-//      msg.checkout ! DeliveryMethodSelected
-//
-//      msg.checkout ! PaymentSelected
-//      expectMsgType[PaymentServiceStarted]
-//
-//      msg.checkout ! PaymentReceived
-//      expectMsg(CheckoutClosed())
-//
-//    }
-//
-//
-//  }
+import scala.concurrent.duration._
+
+class CheckoutTest extends FeatureSpecLike with GivenWhenThen{
+  import actors.CheckoutActor._
+  import actors.CartManagerActor._
+
+  val actorSystemName = "EshopPersistenceTest"
+
+    scenario("System was terminated just after getting DeliveryMethodSelected, timer is still working, with refreshed time") {
+      Given("ActorSystem and checkout actor")
+      val currentTime = System.nanoTime()
+      val actorSystem = ActorSystem(actorSystemName)
+      val cartProbe = TestProbe()(actorSystem)
+      val customerTestProbe = TestProbe()(actorSystem)
+      val checkoutActor = cartProbe.childActorOf(Props(classOf[CheckoutActor], currentTime, customerTestProbe.testActor))
+
+      When("System terminates after getting DeliveryMethodSelected after some time (5 seconds)")
+      checkoutActor.tell(CheckoutStarted(customerTestProbe.testActor, System.currentTimeMillis()), customerTestProbe.testActor)
+      checkoutActor.tell(DeliveryMethodSelected, customerTestProbe.testActor)
+      customerTestProbe.expectNoMessage(5 seconds)
+      actorSystem.terminate()
+
+      Then("Checkout will have lower timer time (6 seconds)")
+      val restartedActorSystem = ActorSystem(actorSystemName)
+      val restartedCartProbe = TestProbe()(restartedActorSystem)
+      val restartedCustomerTestProbe = TestProbe()(restartedActorSystem)
+      val restartedCheckoutActor = restartedCartProbe.childActorOf(Props(classOf[CheckoutActor], currentTime, restartedCustomerTestProbe.testActor))
+
+      restartedCustomerTestProbe.expectMsg(6 seconds, CheckoutCancelled)
+      restartedActorSystem.terminate()
+    }
+
 }

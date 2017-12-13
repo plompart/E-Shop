@@ -22,15 +22,15 @@ object CheckoutActor {
 }
 
 class CheckoutActor(id: Long, customer: ActorRef) extends PersistentActor with Timers {
-
+  import CartManagerActor._
   import CheckoutActor._
 
   private val cart: ActorRef = context.parent
 
   val checkoutTimer = "CheckoutTimer"
-  val checkoutTimeout = FiniteDuration(30, TimeUnit.SECONDS)
+  val checkoutTimeout = FiniteDuration(10, TimeUnit.SECONDS)
   val paymentTimer = "PaymentTimer"
-  val paymentTimeout = FiniteDuration(30, TimeUnit.SECONDS)
+  val paymentTimeout = FiniteDuration(10, TimeUnit.SECONDS)
   val interval: FiniteDuration = 10 seconds
 
   override def persistenceId: String = "checkout:" + id
@@ -41,26 +41,26 @@ class CheckoutActor(id: Long, customer: ActorRef) extends PersistentActor with T
   }
 
   override def receiveCommand: Receive = LoggingReceive {
-    case event: CartManagerActor.CheckoutStarted => persist(event)(event => updateState(event))
+    case event: CheckoutStarted => persist(event)(event => updateState(event))
   }
 
   def selectingDelivery: Receive = LoggingReceive {
     case DeliveryMethodSelected =>
       persist(DeliveryMethodSelected)(event => updateState(event))
-    case CartManagerActor.CheckoutCancelled =>
-      persist(CartManagerActor.CheckoutCancelled)(event => updateState(event))
+    case CheckoutCancelled =>
+      persist(CheckoutCancelled)(event => updateState(event))
     case CheckoutTimerExpired =>
       persist(CheckoutTimerExpired)(event => updateState(event))
   }
 
   def processingPayment: Receive = LoggingReceive {
     case PaymentReceived => persist(PaymentReceived)( event => {
-      customer ! CartManagerActor.CheckoutClosed
-      cart ! CartManagerActor.CheckoutClosed
+      customer ! CheckoutClosed
+      cart ! CheckoutClosed
       updateState(event)
     })
     case PaymentTimerExpired => persist(PaymentTimerExpired)(event => {
-      cart ! CartManagerActor.CheckoutCancelled
+      cart ! CheckoutCancelled
       updateState(event)
     })
   }
@@ -74,24 +74,25 @@ class CheckoutActor(id: Long, customer: ActorRef) extends PersistentActor with T
       })
     case Cancelled =>
       persist(Cancelled)(event => {
-        cart ! CartManagerActor.CheckoutCancelled
+        cart ! CheckoutCancelled
         updateState(event)
       })
     case CheckoutTimerExpired =>
       persist(CheckoutTimerExpired)(event => {
-        cart ! CartManagerActor.CheckoutCancelled
+        cart ! CheckoutCancelled
+        customer ! CheckoutCancelled
         updateState(event)
       })
   }
 
   private def updateState(event: Any): Unit = {
     event match {
-      case event: CartManagerActor.CheckoutStarted =>
+      case event: CheckoutStarted =>
         context become selectingDelivery
         startTimer(event.date, checkoutTimer, checkoutTimeout, CheckoutTimerExpired)
       case DeliveryMethodSelected =>
         context become selectingPaymentMethod
-      case CartManagerActor.CheckoutCancelled | Cancelled =>
+      case CheckoutCancelled | Cancelled =>
         timers.cancelAll()
         context stop self
       case CheckoutTimerExpired =>
