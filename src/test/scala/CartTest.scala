@@ -1,45 +1,32 @@
-import actors.{CartManagerActor, CustomerActor}
-import akka.actor.ActorSystem
-import akka.testkit.{ImplicitSender, TestActorRef, TestKit}
-import org.scalatest.{BeforeAndAfterAll, WordSpecLike}
+import java.net.URI
 
+import actors.{Cart, Item}
+import org.scalatest.{FeatureSpecLike, GivenWhenThen}
 
-class CartTest extends TestKit(ActorSystem("CartTest")) with WordSpecLike with BeforeAndAfterAll with ImplicitSender {
+class CartTest extends FeatureSpecLike with GivenWhenThen {
+  feature("One can add and remove items into Cart") {
+    scenario("Item was added to cart") {
+      Given("an empty cart and an item")
+      val cart = Cart.empty
+      val item = Item(new URI("http://test/test"), "testItem", 10, 1)
 
-//  import actors.CartManagerActor._
-//
-//  var cart: TestActorRef[CartManagerActor] = _
-//
-//  override def beforeAll(): Unit = {
-//    cart = TestActorRef(new CartManagerActor(self))
-//  }
-//
-//  override def afterAll(): Unit = {
-//    system.terminate
-//  }
-//
-//  "A Cart" must {
-//    "start as empty" in {
-//      assert(cart.underlyingActor.itemCount == 0)
-//    }
-//
-//    "increment the value" in {
-//      assert(cart.underlyingActor.itemCount == 0)
-//      cart ! ItemAdded
-//      assert(cart.underlyingActor.itemCount == 1)
-//    }
-//
-//    "decrement the value" in {
-//      assert(cart.underlyingActor.itemCount == 1)
-//      cart ! ItemRemoved
-//      assert(cart.underlyingActor.itemCount == 0)
-//    }
-//
-//    "send back checkout" in {
-//      cart ! ItemAdded
-//      cart ! CustomerActor.StartCheckout
-//
-//      expectMsgType[CheckoutStarted]
-//    }
-//  }
+      When("the item is added")
+      val cartWithItem = cart.addItem(item)
+
+      Then("cart has the item in it.")
+      assert(cartWithItem.items.size == 1)
+      assert(cartWithItem.items.values.forall(_ == item))
+    }
+    scenario("Item was removed from cart with one item of same id, with same quantity") {
+      Given("an cart with one item")
+      val item = Item(new URI("http://test/test"), "testItem", 10, 1)
+      val cartWithItem = Cart.empty.addItem(item)
+
+      When("the same item is removed, cart becomes empty")
+      val emptyCart = cartWithItem.removeItem(item)
+
+      Then("cart has the item in it.")
+      assert(emptyCart.items.isEmpty)
+    }
+  }
 }

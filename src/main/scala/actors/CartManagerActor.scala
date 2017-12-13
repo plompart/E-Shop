@@ -11,6 +11,7 @@ import scala.language.postfixOps
 import scala.util.Random
 
 object CartManagerActor  {
+  case class Content(Cart: Cart)
   case class ItemRemoved(item: Item, date: Long)
   case class ItemAdded(item: Item, date: Long)
   case class CheckoutStarted(checkout: ActorRef, date: Long)
@@ -40,7 +41,10 @@ class CartManagerActor(id: Long, var cart: Cart, checkoutId: Long) extends Persi
 
   // state definitions:
   def empty(): Receive = LoggingReceive {
-    case event: ItemAdded => persist(event)(event => updateState(event))
+    case event: ItemAdded => persist(event){ event =>
+      updateState(event)
+      customer ! Content(cart)
+    }
   }
 
   def nonEmpty(): Receive = LoggingReceive {

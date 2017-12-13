@@ -43,5 +43,7 @@ class CustomerActor extends Actor {
         println(CheckoutClosed.toString)
       case CartEmpty =>
         println(CartEmpty.toString)
+      case CartManagerActor.Content(cart) =>
+        println(cart.toString)
     }
 }
