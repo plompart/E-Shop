@@ -6,16 +6,16 @@ import akka.event.LoggingReceive
 object PaymentServiceActor {
   case class DoPayment()
   case class PaymentConfirmed()
-
-  def props(checkout: ActorRef): Props = Props(new PaymentServiceActor(checkout))
 }
 
-class PaymentServiceActor(checkout: ActorRef) extends Actor {
+class PaymentServiceActor(customer: ActorRef) extends Actor {
   import PaymentServiceActor._
+
+  private val checkout: ActorRef = context.parent
 
   def receive = LoggingReceive {
     case DoPayment =>
-      sender ! PaymentConfirmed
+      customer ! PaymentConfirmed
       checkout ! CheckoutActor.PaymentReceived
       context stop self
   }
