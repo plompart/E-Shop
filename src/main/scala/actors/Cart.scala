@@ -6,7 +6,9 @@ object Cart {
   val empty = Cart(Map.empty)
 }
 
-case class Item(id: URI, name: String, price: BigDecimal, count: Int)
+case class Item(id: URI, name: String, price: BigDecimal, count: Int){
+  require(count > 0 && price > 0)
+}
 case class Cart(items: Map[URI, Item]) {
   def addItem(it: Item): Cart = {
     val currentCount = if (items contains it.id) items(it.id).count else 0

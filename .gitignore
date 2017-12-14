@@ -6,3 +6,4 @@ target
 *.iws
 .idea
 out
+src/main/resources/query_result
