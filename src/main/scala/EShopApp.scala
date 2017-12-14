@@ -1,22 +1,33 @@
-import actors.CustomerActor
-import actors.CustomerActor.{Init, Init2}
+import actors.CustomerActor.Init2
+import actors.{CartManagerActor, CustomerActor, Item}
 import akka.actor._
+import akka.util.Timeout
+import com.typesafe.config.ConfigFactory
 
 import scala.concurrent.Await
 import scala.concurrent.duration._
+import akka.pattern.ask
+import catalog.ProductCatalogActor
+
+import scala.language.postfixOps
 
 object EShopApp extends App {
-  val actorSystem = ActorSystem("eshop")
-  val customer = actorSystem.actorOf(Props[CustomerActor],"Customer")
-  customer ! Init
+  implicit val timeout = Timeout(60 seconds)
+  val productString = "ProductCatalog"
+  val catalogString = "catalog"
+  val config = ConfigFactory.load()
 
-  Thread.sleep(5 * 1000)
-  actorSystem.terminate()
-  Thread.sleep(5 * 1000)
+  val productSystem = ActorSystem(productString, config.getConfig(catalogString).withFallback(config))
+  val shopSystem = ActorSystem("ShopSystem", config.getConfig("eShop").withFallback(config))
 
-  val actorSystem2 = ActorSystem("EShop")
-  val customer2 = actorSystem2.actorOf(Props[CustomerActor],"Customer")
-  //customer2 ! Init
-  customer2 ! Init2
-  Await.result(actorSystem2.whenTerminated,Duration.Inf)
+  val catalog = productSystem.actorOf(Props[ProductCatalogActor], catalogString)
+  val customer = shopSystem.actorOf(Props[CustomerActor],"Customer")
+
+  val futureAnswer = customer ? "Dutch Cocoa"
+
+  customer ! Init2
+
+  val result = Await.result(futureAnswer, timeout.duration).asInstanceOf[Item]
+
+  Await.result(shopSystem.whenTerminated,Duration.Inf)
 }

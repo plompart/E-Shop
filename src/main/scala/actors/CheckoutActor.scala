@@ -30,7 +30,7 @@ class CheckoutActor(id: Long, customer: ActorRef) extends PersistentActor with T
   val checkoutTimer = "CheckoutTimer"
   val checkoutTimeout = FiniteDuration(10, TimeUnit.SECONDS)
   val paymentTimer = "PaymentTimer"
-  val paymentTimeout = FiniteDuration(10, TimeUnit.SECONDS)
+  val paymentTimeout = FiniteDuration(10, TimeUnit.MINUTES)
   val interval: FiniteDuration = 10 seconds
 
   override def persistenceId: String = "checkout:" + id

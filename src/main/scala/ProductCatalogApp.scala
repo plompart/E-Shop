@@ -12,6 +12,6 @@ object ProductCatalogApp extends App {
   private val config = ConfigFactory.load()
   implicit val system: ActorSystem = ActorSystem(systemName, config.getConfig(catalogString).withFallback(config))
 
-  val catalogue = system.actorOf(Props[ProductCatalogActor], catalogString)
+  val catalog = system.actorOf(Props[ProductCatalogActor], catalogString)
   Await.result(system.whenTerminated,Duration.Inf)
 }
